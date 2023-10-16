@@ -1,0 +1,336 @@
+package LVWeather;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.sql.Types;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+public class DB {
+	private Connection con;
+	private Statement stmt;
+	private PreparedStatement ps;
+	private ResultSet rs;
+	private ResultSet rs2;
+	private static String DB_NAME = "lvweather_coursework";
+	private static String FORECAST_POINTS_TABLE_TABLE = "forecast_points";
+	private static String WEATHER_STATION_METADATA_TABLE_NAME = "weather_station_metadata";
+	private static String WEATHER_STATION_DATA_TABLE_NAME = "weather_station_data";
+	private static String[] STATION_DATA_TABLE_FIRST_COLUMN = { "Date and time:", "Station name: ", "Temperature: ",
+			"Wind direction: ", "Avg wind speed: ", "Wind gusts: ", "Relative humidity: ", "Atmospheric pressure: ",
+			"Precipitation (mm/1h): ", "Visibility: ", "Snow cover: ", "UVI Index: " };
+
+	private static String FORECAST_POINT_INSERT_STATEMENT = "INSERT INTO `" + DB_NAME + "`.`"
+			+ FORECAST_POINTS_TABLE_TABLE + "` (`point_id`, `town_name`, `region_name`, `weight`) VALUES (?, ?, ?, ?)";
+
+	private static String WEATHER_STATION_METADATA_INSERT_STATEMENT = "INSERT INTO `" + DB_NAME + "`.`"
+			+ WEATHER_STATION_METADATA_TABLE_NAME
+			+ "` (`station_code`, `station_name`, `longitude`, `latitude`, `elevation`) VALUES (?, ?, ?, ?, ?)";
+
+	private static String WEATHER_STATION_DATA_INSERT_STATEMENT = "INSERT INTO `" + DB_NAME + "`.`"
+			+ WEATHER_STATION_DATA_TABLE_NAME + "` "
+			+ "(`date_time`, `station_code`, `temperature`, `wind_direction`, `avg_wind_speed`, `wind_gusts`, `relative_humidity`, `atm_pressure`, "
+			+ "`precipitation_amount`, `visibility`, `snow_cover`, `uvi_index`) VALUES "
+			+ "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+
+	/*
+	 * private static String HOURLY_FORECAST_FOR_POINT_INSERT_STATEMENT =
+	 * "INSERT INTO `" + DB + "`.`" + HOURLY_FORECAST_FOR_POINT_TABLE_NAME +
+	 * "` (`date_time`, `point_id`, `name`, `temperature`, `temperature_feelslike`, `wind_speed`, `wind_direction`, `wind_gusts`, `precipitation_1hour`, "
+	 * +
+	 * "`precipitation_probability`, `relative_humidity`, `atm_pressure`, `snow_cover`, `uvi_index`, `thunderstorm_probability`, `displayed_icon`) "
+	 * + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+	 */
+	public DB() {
+		try {
+			String params = "?useSSL=false&autoReconnect=true&allowMultiQueries=true";
+			this.con = DriverManager.getConnection("jdbc:mysql://localhost:3306/" + DB_NAME + params, "root", "root");
+			this.stmt = con.createStatement();
+			System.out.println("DB connection established");
+		} catch (Exception e) {
+			System.err.println("Problems creating DB connection");
+			e.printStackTrace();
+		}
+	}
+
+	public String[] getAvailableStationDataDates() {
+		// https://stackoverflow.com/questions/5335735/selecting-distinct-dates-from-datetime-column-in-a-table
+		String query = "SELECT DISTINCT CAST(`date_time` AS DATE) AS dateonly FROM " + WEATHER_STATION_DATA_TABLE_NAME
+				+ ";";
+		rs = select(query);
+		ArrayList<String> dateList = new ArrayList<String>();
+		try {
+			while (rs.next()) {
+				dateList.add(TimeManager.formatDateFromDashesToDots(rs.getString("dateonly")));
+			}
+		} catch (Exception e) {
+			System.out.println("Error in getStationNameList DB request " + e);
+		}
+		Collections.sort(dateList, String.CASE_INSENSITIVE_ORDER.reversed());
+		return dateList.toArray(new String[dateList.size()]);
+	}
+
+	public String[] getAvailableTimesForDate(String date) {
+		String query = "SELECT DISTINCT CAST(`date_time` AS TIME) AS timeonly FROM " + WEATHER_STATION_DATA_TABLE_NAME
+				+ " WHERE CAST(`date_time` AS DATE) LIKE '" + date + "';";
+		rs = select(query);
+		System.out.println(query);
+		ArrayList<String> timeList = new ArrayList<String>();
+		try {
+			while (rs.next()) {
+				String time = TimeManager.formatDateFromDashesToDots(rs.getString("timeonly"));
+				timeList.add(time.substring(0, 5));
+			}
+		} catch (Exception e) {
+			System.out.println("Error in getStationNameList DB request " + e);
+		}
+		Collections.sort(timeList, String.CASE_INSENSITIVE_ORDER);
+		return timeList.toArray(new String[timeList.size()]);
+	}
+
+	public String getStationCodeFromName(String stationName) {
+		String query = ("SELECT station_code FROM " + WEATHER_STATION_METADATA_TABLE_NAME + " WHERE station_name LIKE '" +stationName+ "';");
+		System.out.println(query);
+		rs2 = select(query);
+		try {	
+			rs2.next();
+			return rs2.getString(1);
+		} catch (Exception e) {
+			System.out.println("Error in getStationNameFromCode() DB request " +e);
+			return "null";
+		}
+	}
+	
+	public String[][] getStationDataForDatetimeAndPlace(String stationName, String dateTime) {
+		System.out.println(stationName);
+		String[][] temp2DStringArr = new String[STATION_DATA_TABLE_FIRST_COLUMN.length][];
+		String query = ("SELECT * FROM " + WEATHER_STATION_DATA_TABLE_NAME + " WHERE date_time LIKE '" +dateTime+ "' AND station_code LIKE '" +getStationCodeFromName(stationName)+ "';");
+		rs = select(query);
+		String[] dateTimeRowPair = {STATION_DATA_TABLE_FIRST_COLUMN[0], TimeManager.formatDateFromDashesToDots(dateTime)};
+		String[] stationNameRowPair = {STATION_DATA_TABLE_FIRST_COLUMN[1], stationName};
+		temp2DStringArr[0] = dateTimeRowPair;
+		temp2DStringArr[1] = stationNameRowPair;
+		System.out.println(query);
+		try {
+			rs.next();
+			for (int i = 2;i < STATION_DATA_TABLE_FIRST_COLUMN.length; i++) {
+				String[] tempArr = new String[2];
+				String secondColumn;
+				try {
+					secondColumn = rs.getString(i+1);
+				} catch (Exception e) {
+					secondColumn = "null";
+				}
+				System.out.println(secondColumn);
+				tempArr[0] = STATION_DATA_TABLE_FIRST_COLUMN[i];
+				tempArr[1] = secondColumn;
+				temp2DStringArr[i] = tempArr;
+			}
+		} catch (Exception e) {
+			System.out.println("Error in getStationDataForDatetimeAndPlace() DB request " + e);
+		}
+		return temp2DStringArr;
+	}
+
+	public String[] getStationNameList() {
+		String query = "SELECT * FROM " + WEATHER_STATION_METADATA_TABLE_NAME + ";";
+		rs = select(query);
+		ArrayList<String> stationNameList = new ArrayList<String>();
+		try {
+			while (rs.next()) {
+				stationNameList.add(rs.getString("station_name"));
+			}
+		} catch (Exception e) {
+			System.out.println("Error in getStationNameList DB request " + e);
+		}
+		Collections.sort(stationNameList, String.CASE_INSENSITIVE_ORDER);
+		return stationNameList.toArray(new String[stationNameList.size()]);
+	}
+
+	public String[] getTownNameList() {
+		String query = "SELECT * FROM " + FORECAST_POINTS_TABLE_TABLE + ";";
+		rs = select(query);
+		ArrayList<String> townNameList = new ArrayList<String>();
+		try {
+			while (rs.next()) {
+				townNameList.add(rs.getString("town_name") + ", " + rs.getString("region_name"));
+			}
+		} catch (Exception e) {
+			System.out.println("Error in getTownNameList DB request " + e);
+		}
+		Collections.sort(townNameList, String.CASE_INSENSITIVE_ORDER);
+		return townNameList.toArray(new String[townNameList.size()]);
+	}
+
+	public int getPointIDFromName(String townName, String regionName) {
+		String query = "SELECT * FROM " + FORECAST_POINTS_TABLE_TABLE + " WHERE town_name = '" + townName
+				+ "' AND region_name = '" + regionName + "';";
+		System.out.println(query);
+		rs = select(query);
+		try {
+			while (rs.next()) { // iterates every row
+				return rs.getInt("point_id"); // returns the first value from first row
+			}
+		} catch (Exception e) {
+			System.out.println("Error in getPointID DB request " + e);
+		}
+		System.out.println("No such place '" + townName + "'");
+		return -1;
+	}
+
+	public void insertForecastPointIntoTable() {
+		JSONArray jsonArray = ForecastPointScraper.getAllPointsOfResolution(6); // 6 ty
+		try {
+			ps = con.prepareStatement(FORECAST_POINT_INSERT_STATEMENT);
+		} catch (Exception e) {
+			System.out.println("Failed to prepare " + FORECAST_POINTS_TABLE_TABLE + " INSERT statement: " + e);
+		}
+		for (Object obj : jsonArray) {
+			JSONObject jsonObj = (JSONObject) obj;
+			int pointID = Integer.parseInt(jsonObj.get("punkts").toString().replace("P", ""));
+			String townName = jsonObj.get("nosaukums").toString();
+			String regionName = jsonObj.get("novads").toString();
+			int weight = jsonObj.getInt("svars");
+			try {
+				ps.setInt(1, pointID);
+				ps.setString(2, townName);
+				ps.setString(3, regionName);
+				ps.setInt(4, weight);
+				ps.addBatch();
+			} catch (Exception e) {
+				System.out.println("Failed to insert entry into DB table " + FORECAST_POINTS_TABLE_TABLE + ": " + e);
+			}
+		}
+		try {
+			ps.executeBatch();
+		} catch (Exception e) {
+			System.out.println("Failed to execute" + FORECAST_POINTS_TABLE_TABLE + " INSERT batch: " + e);
+		}
+	}
+
+	public void insertWeatherStationMetadataIntoTable() {
+		JSONArray jsonArray = WeatherStationScraper.scrapeAllStationMetadata();
+		try {
+			ps = con.prepareStatement(WEATHER_STATION_METADATA_INSERT_STATEMENT);
+		} catch (Exception e) {
+			System.out.println("Failed to prepare WeatherStationInfo INSERT statement "
+					+ WEATHER_STATION_METADATA_TABLE_NAME + ": " + e);
+		}
+		for (Object obj : jsonArray) {
+			JSONObject jsonObj = (JSONObject) obj;
+			String stationCode = jsonObj.get("kods").toString();
+			String stationName = jsonObj.get("nosaukums").toString();
+			double longitude = jsonObj.getDouble("lon");
+			double latitude = jsonObj.getDouble("lat");
+			double height = jsonObj.getDouble("h");
+			try {
+				ps.setString(1, stationCode);
+				ps.setString(2, stationName);
+				ps.setDouble(3, longitude);
+				ps.setDouble(4, latitude);
+				ps.setDouble(5, height);
+				ps.addBatch();
+			} catch (Exception e) {
+				System.out.println(
+						"Failed to insert entry into DB table " + WEATHER_STATION_METADATA_TABLE_NAME + ": " + e);
+			}
+		}
+		try {
+			ps.executeBatch();
+		} catch (Exception e) {
+			System.out.println("Failed to execute " + WEATHER_STATION_METADATA_TABLE_NAME + " INSERT batch " + e);
+		}
+	}
+
+	public void insertWeatherDataIntoTable() {
+		String[] jsonFloatKeys = { "temperatura", "veja_virziens", "videja_veja_atrums", "veja_brazmas",
+				"relativais_mitrums", "atmosferas_spiediens", "nokrisnu_daudzums", "redzamiba", "sniega_segas_biezums",
+				"uvi" };
+		JSONArray jsonArray = WeatherStationScraper.scrapeAllStationWeatherData();
+		// DATE FORMAT = 2023-05-01 19:58:46
+		try {
+			ps = con.prepareStatement(WEATHER_STATION_DATA_INSERT_STATEMENT);
+		} catch (Exception e) {
+			System.out.println("Failed to prepare WeatherStationInfo INSERT statement "
+					+ WEATHER_STATION_DATA_TABLE_NAME + ": " + e);
+		}
+		for (Object obj : jsonArray) {
+			JSONObject jsonObj = (JSONObject) obj;
+			LocalDateTime dateTime = LocalDateTime.parse(jsonObj.get("laiks").toString(), TimeManager.formatter);
+			String stationCode = jsonObj.get("stacijas_kods").toString();
+			try {
+				ps.setObject(1, dateTime);
+				ps.setString(2, stationCode);
+				// have no idea how to better manage the null float values within the json, this
+				// works i guess
+				for (int i = 0; i < jsonFloatKeys.length; i++) {
+					String keyValueString = jsonObj.get(jsonFloatKeys[i]).toString();
+					if (!keyValueString.equals("null")) {
+						float keyValueFloat = Float.parseFloat(keyValueString);
+						ps.setFloat(i + 3, keyValueFloat);
+					} else {
+						ps.setNull(i + 3, Types.FLOAT);
+					}
+				}
+				ps.addBatch();
+			} catch (Exception e) {
+				System.out
+						.println("Failed to insert entry into DB table " + WEATHER_STATION_DATA_TABLE_NAME + ": " + e);
+			}
+		}
+		try {
+			ps.executeBatch();
+		} catch (Exception e) {
+			System.out.println("Failed to execute " + WEATHER_STATION_DATA_TABLE_NAME + " INSERT batch " + e);
+		}
+	}
+
+
+	public void truncateForecastPointTable() {
+		truncateTable(FORECAST_POINTS_TABLE_TABLE);
+	}
+
+	public void truncateWeatherStationMetadataTable() {
+		truncateTable(WEATHER_STATION_METADATA_TABLE_NAME);
+	}
+
+	public void truncateWeatherDataTable() {
+		truncateTable(WEATHER_STATION_DATA_TABLE_NAME);
+	}
+	
+	public void truncateTable(String table) {
+		String query = "TRUNCATE TABLE " + table + ";";
+		try {
+			stmt.executeUpdate(query);
+			System.out.println("Data in table " + table + " deleted successfully");
+		} catch (Exception e) {
+			System.out.println("Failed to execute " + table + " TRUNCATE TABLE: " + e);
+		}
+	}
+
+	public ResultSet select(String query) {
+		try {
+			return stmt.executeQuery(query);
+		} catch (Exception e) {
+			System.err.println("Problems with query: " + query);
+			e.printStackTrace();
+			return null;
+		}
+	}
+
+	public void insert(String query) {
+		try {
+			stmt.executeUpdate(query);
+		} catch (Exception e) {
+			System.err.println("Problems with query: " + query);
+			e.printStackTrace();
+		}
+	}
+}

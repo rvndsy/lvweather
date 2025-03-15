@@ -7,7 +7,7 @@ This project was originally made as the coursework for a "Introduction to progra
 
 ## Installation
 ### Pre-requisites
-As of now. Java versions 8 and 17 are known to work fine.
+Java Runtime version 17 should work.
 
 Regardless of your OS. You must have a `mysql` (or `mariadb`) database set-up locally with port `3306`.
 On Linux I recommend using `mariadb` which is fully compatible with `mysql`.
@@ -28,20 +28,24 @@ Better instructions may follow later...
 
 ## Dependencies and Libraries
 ##### DB
-As of 2025.02.03: `mariadb 11.6.2-2` has been tested to work with this project, but any future version of MariaDB or MySQL should work just as well.
+As of 2025.03.15, `mariadb 11.7.2-1` has been tested to work with this project, but any future version of MariaDB or MySQL should work just as well.
 
 ##### Java libraries
-Libraries are already included in the `./lib` directory. Here is a complete list of .jar libraries used:
+Libraries are already included in the `./lib` directory. Many are likely out of date but should still work. Here is a complete list of .jar libraries used:
 - json.jar
 - jsoup-1.13.1.jar
 - mysql-connector-java-5.1.48.jar
 - swingx-all-1.6.4.jar
 
-## TODO:
-#### - Clean up repo
-#### - Update weather station data scraping, SQL insertion and DB structure to the new type
-#### - Add a build system?
-#### - Add working DB migrations (way to execute the initial schema)
+## List of missing features
 
-## Here is a runtime screenshot :)
-![LVWeather-Coursework-CROPPED](https://github.com/probablyalright/lvweather/assets/112282114/7d6c7b4c-d55c-4ae1-b00f-00756d037a35)
+- Left and Right increment/decrement time buttons for station data.
+
+- A proper build system.
+
+- DB migrations (way to execute the initial schema).
+
+- Probably can find a better way to lay out the data in app.
+
+## How the UI looks like:
+![LVWeather UI](./ui-example.png)
